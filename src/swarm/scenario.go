@@ -29,6 +29,7 @@ type Scenario struct {
 	consumers      []*Consumer
 	tasks          []Task
 	stopping       bool
+	consumersFinished chan bool
 }
 
 func NewScenario() *Scenario {
@@ -40,6 +41,7 @@ func NewScenario() *Scenario {
 		lastConsumerID: 0,
 		consumers:      make([]*Consumer, 0, 1000),
 		tasks:          make([]Task, 0, 1000),
+		consumersFinished: make(chan bool),
 	}
 }
 
@@ -74,6 +76,13 @@ func (s *Scenario) Run() {
 
 	// Start consumer generation
 	go s.generateConsumers()
+
+	go s.monitorConsumers()
+
+	// Block until all consumers have finished
+	<- s.consumersFinished
+
+	s.Stop()
 }
 
 func (s *Scenario) Stop() {
@@ -103,6 +112,7 @@ func (s *Scenario) generateConsumers() {
 
 func (s *Scenario) newConsumer() *Consumer {
 	c := NewConsumer(s.lastConsumerID, s)
+	c.Start(s.tasks)
 	s.lastConsumerID++
 	return c
 }
@@ -121,4 +131,20 @@ func (s *Scenario) newConsumerGroup() []*Consumer {
 	}
 
 	return consumers
+}
+
+func (s *Scenario) monitorConsumers() {
+	alldone := false
+	for !alldone {
+		time.Sleep(250 * time.Millisecond)
+
+		lenConsumers := len(s.consumers)
+		alldone = lenConsumers == s.Consumers
+
+		for i := 0; i < lenConsumers && alldone; i++ {
+			alldone = alldone && s.consumers[i].Finished
+		}
+	}
+
+	s.consumersFinished <- true
 }
